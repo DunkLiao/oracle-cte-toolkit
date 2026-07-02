@@ -1,0 +1,9 @@
+{
+    "database": {
+        "username": "your_oracle_username",
+        "password": "your_oracle_password",
+        "dsn": "hostname:1521/service_name"
+    },
+    "sql_folder_path": "d:\\your_path\\SQL_OUTPUT",
+    "output_excel_path": "d:\\your_path\\output.xlsx"
+}
