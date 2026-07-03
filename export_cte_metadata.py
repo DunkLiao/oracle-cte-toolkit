@@ -1,6 +1,4 @@
 import os
-import sys
-import json
 import threading
 import tkinter as tk
 from tkinter import ttk
@@ -8,27 +6,20 @@ from tkinter import filedialog
 from tkinter import messagebox
 from tkinter import font as tkfont
 
-import pandas as pd
-import oracledb
+from config_loader import build_config
+from config_loader import build_dsn as format_dsn
+from config_loader import get_config_path as shared_get_config_path
+from config_loader import load_config as read_config
+from config_loader import parse_dsn as split_dsn
+from config_loader import save_config as write_config
+from excel_exporter import export_metadata_rows
+from oracle_client import connect as connect_oracle
+from oracle_client import oracle_type_from_description
+from oracle_client import wrap_metadata_sql
+from sql_reader import read_sql_file
 
 
-# ==============================
-# Config Path
-# ==============================
-
-def get_config_path():
-
-    if getattr(sys, "frozen", False):
-        base_dir = os.path.dirname(sys.executable)
-    else:
-        base_dir = os.path.dirname(
-            os.path.abspath(__file__)
-        )
-
-    return os.path.join(base_dir, "config.json")
-
-
-CONFIG_PATH = get_config_path()
+CONFIG_PATH = shared_get_config_path(__file__)
 
 
 class MetadataExporter:
@@ -380,33 +371,14 @@ class MetadataExporter:
         將 host:port/service 拆解
         """
 
-        host = ""
-        port = "1521"
-        service = ""
-
-        try:
-
-            if "/" in dsn:
-                left, service = dsn.split("/", 1)
-            else:
-                left = dsn
-
-            if ":" in left:
-                host, port = left.split(":", 1)
-            else:
-                host = left
-
-        except:
-            pass
-
-        return host.strip(), port.strip(), service.strip()
+        return split_dsn(dsn)
 
     def build_dsn(self):
 
-        return (
-            f"{self.host.get().strip()}:"
-            f"{self.port.get().strip()}/"
-            f"{self.service.get().strip()}"
+        return format_dsn(
+            self.host.get(),
+            self.port.get(),
+            self.service.get(),
         )
 
     def set_entry(self, entry, value):
@@ -427,12 +399,7 @@ class MetadataExporter:
 
         try:
 
-            with open(
-                CONFIG_PATH,
-                "r",
-                encoding="utf-8"
-            ) as f:
-                cfg = json.load(f)
+            cfg = read_config(CONFIG_PATH)
 
             db = cfg.get("database", {}) or {}
 
@@ -472,29 +439,17 @@ class MetadataExporter:
 
     def save_config(self, silent=True):
 
-        cfg = {
-            "database": {
-                "username": self.user.get().strip(),
-                "password": self.password.get(),
-                "dsn": self.build_dsn()
-            },
-            "sql_folder_path": self.sql_folder.get().strip(),
-            "output_excel_path": self.output_file.get().strip()
-        }
+        cfg = build_config(
+            username=self.user.get().strip(),
+            password=self.password.get(),
+            dsn=self.build_dsn(),
+            sql_folder_path=self.sql_folder.get().strip(),
+            output_excel_path=self.output_file.get().strip(),
+        )
 
         try:
 
-            with open(
-                CONFIG_PATH,
-                "w",
-                encoding="utf-8"
-            ) as f:
-                json.dump(
-                    cfg,
-                    f,
-                    ensure_ascii=False,
-                    indent=4
-                )
+            write_config(CONFIG_PATH, cfg)
 
             if not silent:
 
@@ -589,54 +544,14 @@ class MetadataExporter:
     # ==============================
 
     def oracle_type(self, col):
-
-        dtype = str(col[1]).upper()
-        length = col[3]
-        precision = col[4]
-        scale = col[5]
-
-        if "VARCHAR" in dtype:
-            return f"VARCHAR2({length})"
-
-        if "CHAR" in dtype:
-            return f"CHAR({length})"
-
-        if "NUMBER" in dtype:
-            if precision:
-                if scale and scale > 0:
-                    return f"NUMBER({precision},{scale})"
-                return f"NUMBER({precision})"
-            return "NUMBER"
-
-        if "DATE" in dtype:
-            return "DATE"
-
-        if "TIMESTAMP" in dtype:
-            return "TIMESTAMP"
-
-        if "CLOB" in dtype:
-            return "CLOB"
-
-        if "BLOB" in dtype:
-            return "BLOB"
-
-        return dtype
+        return oracle_type_from_description(col)
 
     # ==============================
     # SQL 包裝
     # ==============================
 
     def wrap_sql(self, sql_text):
-
-        sql_text = sql_text.strip().rstrip(";")
-
-        return f"""
-        SELECT *
-        FROM (
-            {sql_text}
-        ) X
-        WHERE 1=0
-        """
+        return wrap_metadata_sql(sql_text)
 
     # ==============================
     # 執行
@@ -676,10 +591,10 @@ class MetadataExporter:
             self.set_status("連線中...")
             self.write_log(f"[Connect] {dsn}", "INFO")
 
-            conn = oracledb.connect(
-                user=self.user.get().strip(),
-                password=self.password.get(),
-                dsn=dsn
+            conn = connect_oracle(
+                self.user.get().strip(),
+                self.password.get(),
+                dsn,
             )
 
             cur = conn.cursor()
@@ -720,15 +635,14 @@ class MetadataExporter:
 
                 path = os.path.join(sql_folder, file_name)
 
-                sql_text = None
-
-                for enc in ["utf-8", "cp950", "big5"]:
-                    try:
-                        with open(path, "r", encoding=enc) as f:
-                            sql_text = f.read()
-                        break
-                    except:
-                        pass
+                try:
+                    sql_text = read_sql_file(path)
+                except Exception as ex:
+                    self.write_log(
+                        f"    無法讀取 SQL 檔案: {ex}",
+                        "ERR"
+                    )
+                    continue
 
                 if not sql_text:
                     self.write_log(
@@ -788,13 +702,7 @@ class MetadataExporter:
 
             self.set_status("寫入 Excel...")
 
-            df = pd.DataFrame(all_rows)
-
-            df.to_excel(
-                output_file,
-                index=False,
-                engine="openpyxl"
-            )
+            export_metadata_rows(all_rows, output_file)
 
             cur.close()
             conn.close()

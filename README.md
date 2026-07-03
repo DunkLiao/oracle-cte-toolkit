@@ -10,9 +10,15 @@
 ```
 oracle-cte-toolkit/
 ├── .gitignore                  # Git 忽略清單（含 config.json）
+├── build_exe.bat               # Windows 免安裝 exe 打包批次檔
 ├── config.example.json         # 設定檔範本（請複製為 config.json 後修改）
+├── config_loader.py            # config.json 路徑、讀寫與 DSN 處理
+├── excel_exporter.py           # Excel 查詢結果與 metadata 匯出
 ├── export_cte_metadata.py      # CTE 欄位 Metadata 匯出工具
-└── oracle_query_tool.py        # Oracle SQL 批次查詢工具
+├── oracle_client.py            # Oracle 連線與 metadata SQL 包裝
+├── oracle_query_tool.py        # Oracle SQL 批次查詢工具
+├── sql_reader.py               # SQL 檔案掃描、編碼偵測與讀取
+└── tests/                      # 離線單元測試
 ```
 
 > 💡 **注意**：`config.json` 已被 `.gitignore` 排除，首次使用請依 [設定步驟](#-設定步驟) 建立。
@@ -51,6 +57,8 @@ oracle-cte-toolkit/
 
 ## 📦 安裝步驟
 
+若只要使用已打包好的免安裝版本，可跳到 [免安裝執行檔](#-免安裝執行檔)。
+
 ```bash
 # 1. Clone 專案
 git clone https://github.com/<your-account>/oracle-cte-toolkit.git
@@ -64,6 +72,38 @@ venv\Scripts\activate            # Windows
 # 3. 安裝套件
 pip install oracledb pandas openpyxl chardet
 ```
+
+---
+
+## 🧳 免安裝執行檔
+
+本專案提供 Windows 打包批次檔，可將兩個 GUI 工具編譯成免安裝 `.exe`。打包會建立隔離的建置環境在 `build\package-venv`，並輸出到 `dist\oracle-cte-toolkit`。
+
+### 建立執行檔
+
+```bat
+build_exe.bat
+```
+
+成功後會產生：
+
+```text
+dist\oracle-cte-toolkit\OracleQueryTool.exe
+dist\oracle-cte-toolkit\CteMetadataExporter.exe
+dist\oracle-cte-toolkit\config.example.json
+```
+
+### 發布與使用
+
+將整個 `dist\oracle-cte-toolkit` 資料夾複製到目標 Windows 電腦即可使用。首次使用時：
+
+```bat
+copy config.example.json config.json
+```
+
+再編輯 `config.json` 的 Oracle 帳號、密碼、DSN、SQL 資料夾與輸出 Excel 路徑。兩個 exe 會從自身所在資料夾讀寫 `config.json`。
+
+> `build/`、`dist/` 與 PyInstaller `.spec` 檔已被 `.gitignore` 排除，不應提交到版本庫。
 
 ---
 
@@ -102,14 +142,20 @@ copy config.example.json config.json      # Windows
 
 ## 🚀 使用方式
 
-### ▶ 執行 SQL 批次查詢工具
+### ▶ 使用 Python 執行 SQL 批次查詢工具
 ```bash
 python oracle_query_tool.py
 ```
 
-### ▶ 執行 CTE Metadata 匯出工具
+### ▶ 使用 Python 執行 CTE Metadata 匯出工具
 ```bash
 python export_cte_metadata.py
+```
+
+### ▶ 使用免安裝 exe
+```bat
+dist\oracle-cte-toolkit\OracleQueryTool.exe
+dist\oracle-cte-toolkit\CteMetadataExporter.exe
 ```
 
 ---
@@ -180,6 +226,24 @@ copy config.example.json config.json
 - 🔒 `config.json` 內含資料庫帳密，**絕對不要提交至 Git**（已在 `.gitignore` 排除）
 - 🔑 若不慎將帳密推送至遠端，請**立即變更 Oracle 密碼**
 - 👥 團隊協作時，僅共用 `config.example.json` 範本
+
+---
+
+## 🧪 開發與驗證
+
+語法檢查：
+
+```bash
+python -m py_compile oracle_query_tool.py export_cte_metadata.py config_loader.py oracle_client.py sql_reader.py excel_exporter.py
+```
+
+離線單元測試：
+
+```bash
+python -m unittest discover -s tests
+```
+
+測試不會連線真實 Oracle；Oracle 連線相關行為以 mock 驗證，真實資料庫連線與匯出需在目標環境手動驗收。
 
 ---
 

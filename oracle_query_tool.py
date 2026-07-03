@@ -1,6 +1,4 @@
 import os
-import sys
-import json
 import threading
 import tkinter as tk
 from tkinter import ttk
@@ -8,30 +6,22 @@ from tkinter import filedialog
 from tkinter import messagebox
 from tkinter import font as tkfont
 
-import chardet
-import oracledb
 import pandas as pd
-from openpyxl import Workbook
-from openpyxl.utils.dataframe import dataframe_to_rows
+
+from config_loader import build_config
+from config_loader import build_dsn as format_dsn
+from config_loader import default_config
+from config_loader import get_config_path
+from config_loader import load_config as read_config
+from config_loader import parse_dsn as split_dsn
+from config_loader import save_config as write_config
+from excel_exporter import export_query_dataframes
+from oracle_client import connect as connect_oracle
+from sql_reader import detect_encoding as detect_file_encoding
+from sql_reader import read_sql_file
 
 
-# ==============================
-# 預設 Config 路徑
-# ==============================
-
-def get_default_config_path():
-
-    if getattr(sys, "frozen", False):
-        base_dir = os.path.dirname(sys.executable)
-    else:
-        base_dir = os.path.dirname(
-            os.path.abspath(__file__)
-        )
-
-    return os.path.join(base_dir, "config.json")
-
-
-DEFAULT_CONFIG_PATH = get_default_config_path()
+DEFAULT_CONFIG_PATH = get_config_path(__file__)
 
 
 class OracleQueryApp:
@@ -503,34 +493,13 @@ class OracleQueryApp:
     # ==============================
 
     def parse_dsn(self, dsn):
-
-        host = ""
-        port = "1521"
-        service = ""
-
-        try:
-
-            if "/" in dsn:
-                left, service = dsn.split("/", 1)
-            else:
-                left = dsn
-
-            if ":" in left:
-                host, port = left.split(":", 1)
-            else:
-                host = left
-
-        except:
-            pass
-
-        return host.strip(), port.strip(), service.strip()
+        return split_dsn(dsn)
 
     def build_dsn(self):
-
-        return (
-            f"{self.host.get().strip()}:"
-            f"{self.port.get().strip()}/"
-            f"{self.service.get().strip()}"
+        return format_dsn(
+            self.host.get(),
+            self.port.get(),
+            self.service.get(),
         )
 
     # ==============================
@@ -538,24 +507,7 @@ class OracleQueryApp:
     # ==============================
 
     def detect_encoding(self, file_path):
-
-        try:
-
-            with open(file_path, "rb") as f:
-                raw = f.read()
-
-            result = chardet.detect(raw)
-            enc = result.get("encoding") or "utf-8"
-
-            return enc
-
-        except Exception as e:
-
-            self.log(
-                f"偵測編碼失敗：{e}",
-                "WARN"
-            )
-            return "utf-8"
+        return detect_file_encoding(file_path)
 
     # ==============================
     # 檔案選擇
@@ -605,36 +557,11 @@ class OracleQueryApp:
 
     def create_example_config(self, config_path):
 
-        base_dir = os.path.dirname(
-            os.path.abspath(config_path)
-        )
-
-        example = {
-            "database": {
-                "username": "your_username",
-                "password": "your_password",
-                "dsn": "your_host:1521/your_service"
-            },
-            "sql_folder_path": os.path.join(
-                base_dir, "sql_files"
-            ),
-            "output_excel_path": os.path.join(
-                base_dir, "output.xlsx"
-            )
-        }
+        example = default_config(config_path)
 
         try:
 
-            os.makedirs(base_dir, exist_ok=True)
-
-            with open(
-                config_path, "w", encoding="utf-8"
-            ) as f:
-                json.dump(
-                    example, f,
-                    indent=4,
-                    ensure_ascii=False
-                )
+            write_config(config_path, example)
 
             sql_folder = example["sql_folder_path"]
 
@@ -683,10 +610,7 @@ class OracleQueryApp:
                 "INFO"
             )
 
-            with open(
-                config_path, "r", encoding=enc
-            ) as f:
-                cfg = json.load(f)
+            cfg = read_config(config_path)
 
             db = cfg.get("database", {}) or {}
 
@@ -733,37 +657,19 @@ class OracleQueryApp:
 
     def save_config(self, silent=True):
 
-        cfg = {
-            "database": {
-                "username": self.user.get().strip(),
-                "password": self.password.get(),
-                "dsn": self.build_dsn()
-            },
-            "sql_folder_path":
-                self.sql_folder_path.get().strip(),
-            "output_excel_path":
-                self.output_excel_path.get().strip()
-        }
+        cfg = build_config(
+            username=self.user.get().strip(),
+            password=self.password.get(),
+            dsn=self.build_dsn(),
+            sql_folder_path=self.sql_folder_path.get().strip(),
+            output_excel_path=self.output_excel_path.get().strip(),
+        )
 
         path = self.config_file_path.get()
 
         try:
 
-            os.makedirs(
-                os.path.dirname(
-                    os.path.abspath(path)
-                ),
-                exist_ok=True
-            )
-
-            with open(
-                path, "w", encoding="utf-8"
-            ) as f:
-                json.dump(
-                    cfg, f,
-                    indent=4,
-                    ensure_ascii=False
-                )
+            write_config(path, cfg)
 
             if not silent:
                 self.log(
@@ -813,10 +719,10 @@ class OracleQueryApp:
                 f"[Connect] {dsn}", "INFO"
             )
 
-            self.connection = oracledb.connect(
-                user=self.user.get().strip(),
-                password=self.password.get(),
-                dsn=dsn
+            self.connection = connect_oracle(
+                self.user.get().strip(),
+                self.password.get(),
+                dsn,
             )
 
             self.log(
@@ -902,11 +808,7 @@ class OracleQueryApp:
                     "INFO"
                 )
 
-                with open(
-                    path, "r", encoding=enc,
-                    errors="ignore"
-                ) as f:
-                    content = f.read()
+                content = read_sql_file(path)
 
                 sheet = os.path.splitext(file)[0]
                 sql_files[sheet] = content
@@ -969,8 +871,7 @@ class OracleQueryApp:
             if not sql_files:
                 return
 
-            wb = Workbook()
-            wb.remove(wb.active)
+            dataframes = {}
 
             total = len(sql_files)
 
@@ -998,19 +899,8 @@ class OracleQueryApp:
                         self.connection
                     )
 
-                    valid_name = sheet_name[:31]
-                    for ch in [
-                        ":", "\\", "/", "?",
-                        "*", "[", "]"
-                    ]:
-                        valid_name = valid_name.replace(ch, "")
-
-                    ws = wb.create_sheet(title=valid_name)
-
-                    for r in dataframe_to_rows(
-                        df, index=False, header=True
-                    ):
-                        ws.append(r)
+                    dataframes[sheet_name] = df
+                    valid_name = sheet_name
 
                     self.log(
                         f"    ✓ {len(df)} 筆 → 工作頁：{valid_name}",
@@ -1029,14 +919,9 @@ class OracleQueryApp:
                     text=f"{idx} / {total}"
                 )
 
-            # 若沒有任何 sheet，補一個空 sheet 避免存檔錯誤
-
-            if not wb.sheetnames:
-                wb.create_sheet(title="EMPTY")
-
             self.set_status("寫入 Excel...")
 
-            wb.save(output_path)
+            export_query_dataframes(dataframes, output_path)
 
             self.log("", "INFO")
             self.log("=" * 60, "OK")
