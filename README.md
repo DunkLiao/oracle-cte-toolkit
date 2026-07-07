@@ -70,7 +70,7 @@ venv\Scripts\activate            # Windows
 # source venv/bin/activate       # macOS / Linux
 
 # 3. 安裝套件
-pip install oracledb pandas openpyxl chardet
+pip install -r requirements.txt
 ```
 
 ---
@@ -255,6 +255,7 @@ python -m unittest discover -s tests
 | [`pandas`](https://pypi.org/project/pandas/) | 資料處理與轉換 |
 | [`openpyxl`](https://pypi.org/project/openpyxl/) | Excel `.xlsx` 讀寫 |
 | [`chardet`](https://pypi.org/project/chardet/) | 自動偵測 SQL 檔案編碼 |
+| [`cryptography`](https://pypi.org/project/cryptography/) | `oracledb` Thin Mode 連線所需的加密套件 |
 | `tkinter` | GUI 介面（Python 內建） |
 
 ---

@@ -25,11 +25,12 @@
 - `pandas`: 將查詢結果整理成 DataFrame，方便後續轉換與輸出。
 - `openpyxl`: 建立與寫入 `.xlsx` 檔案；`oracle_query_tool.py` 也使用 `dataframe_to_rows` 將 DataFrame 寫入工作表。
 - `chardet`: 偵測 `.sql` 檔案編碼，支援 UTF-8、BIG5、CP950 等常見來源。
+- `cryptography`: `oracledb` Thin Mode 連線時需要的加密套件；PyInstaller 打包時必須一併收進 exe，否則連線會出現 `DPY-3016` / `No module named 'cryptography'`。
 
 安裝指令：
 
 ```powershell
-pip install oracledb pandas openpyxl chardet
+pip install -r requirements.txt
 ```
 
 ## 現有工具模組
@@ -47,6 +48,13 @@ pip install oracledb pandas openpyxl chardet
 - `sql_reader.py`: 封裝 SQL 檔案搜尋、編碼偵測、內容讀取與基本驗證。
 - `excel_exporter.py`: 統一 DataFrame、metadata 與多工作表 Excel 輸出格式。
 - `tkinter_shell.py`: 提供共用 GUI layout、欄位輸入、背景執行、訊息提示與進度狀態。
+
+## PyInstaller 打包注意事項
+
+- 打包請使用 `build_exe.bat`，它會在 `build\package-venv` 建立隔離環境，並依 `requirements.txt` 安裝應用程式依賴。
+- `cryptography` 雖然是 `oracledb` 的依賴，但在 Thin Mode 實際連線時才會觸發；PyInstaller 不一定能只靠靜態分析完整收集，因此 `build_exe.bat` 需要保留 `--hidden-import cryptography` 與 `--collect-submodules cryptography`。
+- 若 exe 連線時出現 `DPY-3016: python-oracledb thin mode cannot be used because the cryptography package cannot be imported`，優先確認 `requirements.txt` 包含 `cryptography`，並重新執行 `cmd /c build_exe.bat` 產生新版 exe。
+- 打包完成後，可檢查 `build\pyinstaller\OracleQueryTool\Analysis-00.toc` 與 `build\pyinstaller\CteMetadataExporter\Analysis-00.toc` 是否包含 `cryptography`，確認依賴已被收進分析結果。
 
 ## 開發與驗證
 

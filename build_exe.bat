@@ -29,7 +29,7 @@ if /i "%SKIP_PIP_INSTALL%"=="1" (
 ) else (
     "%PYTHON_EXE%" -m pip install --upgrade pip
     if errorlevel 1 exit /b 1
-    "%PYTHON_EXE%" -m pip install --upgrade pyinstaller oracledb pandas openpyxl chardet
+    "%PYTHON_EXE%" -m pip install --upgrade pyinstaller -r "%ROOT%\requirements.txt"
     if errorlevel 1 exit /b 1
 )
 
@@ -40,9 +40,9 @@ if errorlevel 1 (
     exit /b 1
 )
 
-"%PYTHON_EXE%" -c "import oracledb, pandas, openpyxl, chardet" >nul 2>nul
+"%PYTHON_EXE%" -c "import oracledb, pandas, openpyxl, chardet, cryptography" >nul 2>nul
 if errorlevel 1 (
-    echo ERROR: Missing one or more application dependencies: oracledb pandas openpyxl chardet
+    echo ERROR: Missing one or more application dependencies: oracledb pandas openpyxl chardet cryptography
     exit /b 1
 )
 
@@ -69,6 +69,8 @@ echo [6/6] Building OracleQueryTool.exe...
     --hidden-import oracledb ^
     --hidden-import pandas ^
     --hidden-import openpyxl ^
+    --hidden-import cryptography ^
+    --collect-submodules cryptography ^
     "%ROOT%\oracle_query_tool.py"
 if errorlevel 1 exit /b 1
 
@@ -90,6 +92,8 @@ echo Building CteMetadataExporter.exe...
     --hidden-import oracledb ^
     --hidden-import pandas ^
     --hidden-import openpyxl ^
+    --hidden-import cryptography ^
+    --collect-submodules cryptography ^
     "%ROOT%\export_cte_metadata.py"
 if errorlevel 1 exit /b 1
 
